@@ -129,6 +129,10 @@ func (c *Conn) WriteData(payload []byte) (int, error) {
 	return total, nil
 }
 
+// Write sends p as tunnelled data, satisfying io.Writer. It is a thin alias
+// for WriteData so a Conn can be spliced with io.Copy.
+func (c *Conn) Write(p []byte) (int, error) { return c.WriteData(p) }
+
 // WritePadding sends a padding record of n random-free zero bytes. The receiver
 // authenticates and discards it. Padding records let the shaper add cover bytes
 // and break up the size pattern of the inner traffic.
@@ -191,3 +195,26 @@ func (c *Conn) fill() error {
 
 // Close closes the underlying stream.
 func (c *Conn) Close() error { return c.raw.Close() }
+
+// TrialOpen reports whether raw is a well-formed inner record that
+// authenticates under recvKey at counter 0. The relay uses it to find the
+// handoff point: the client's real TLS Finished (encrypted under the genuine
+// TLS keys) fails to open, while the first inner record succeeds. raw must be a
+// complete record including its 5-byte header.
+func TrialOpen(recvKey, raw []byte) bool {
+	if len(raw) < hdrLen || raw[0] != tlsAppDataHeader[0] {
+		return false
+	}
+	n := int(binary.BigEndian.Uint16(raw[3:5]))
+	if n != len(raw)-hdrLen || n < chacha20poly1305.Overhead+1 {
+		return false
+	}
+	aead, err := chacha20poly1305.New(recvKey)
+	if err != nil {
+		return false
+	}
+	var nonce [chacha20poly1305.NonceSize]byte // counter 0
+	body := append([]byte(nil), raw[hdrLen:]...)
+	_, err = aead.Open(body[:0], nonce[:], body, nil)
+	return err == nil
+}

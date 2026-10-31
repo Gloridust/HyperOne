@@ -1,0 +1,5 @@
+{
+  "listen": "0.0.0.0:443",
+  "camouflage": "www.example.com:443",
+  "psk_hex": "REPLACE_WITH_OUTPUT_OF_h1-keygen"
+}
